@@ -16,7 +16,7 @@ message("Compiler: " ${CMAKE_CXX_COMPILER})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 #set(CMAKE_DEBUG_POSTFIX "d")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-unused-function -Wno-deprecated-declarations -pthread -fopenmp")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-unused-function -Wno-deprecated-declarations -Wno-sign-compare -pthread -fopenmp")
 
 # Ignore annoying Intel warnings
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel")
@@ -105,6 +105,7 @@ nanobind_add_module(
     src/GraphClusteringSimulator.hpp
     src/GraphXORSATConfig.hpp
     src/RXPMDualConfig.hpp
+    src/RPMCAConfig.hpp
     src/SlantedCheckerboardConfig.hpp
 )
 

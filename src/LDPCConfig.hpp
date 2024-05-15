@@ -76,13 +76,13 @@ class LDPCConfig : public dataframe::Config {
     }
 
     std::pair<int, int> to_coordinates(size_t i) const {
-      int x = i / system_size;
-      int y = i % system_size;
+      int x = i % system_size;
+      int y = i / system_size;
       return std::make_pair(x, y); 
     }
 
     size_t to_index(int x, int y) const {
-      return mod(x) * system_size + mod(y);
+      return mod(x) + mod(y) * system_size;
     }
 
     std::shared_ptr<ParityCheckMatrix> generate_5body_lattice_interaction_matrix() {
@@ -91,7 +91,7 @@ class LDPCConfig : public dataframe::Config {
 
       for (size_t i = 0; i < system_size*system_size; i++) {
         auto [x, y] = to_coordinates(i);
-        if (obc && (x == 0 || x == system_size - 1)) {
+        if (obc && (y == 0 || y == system_size - 1)) {
           continue;
         }
         size_t i1 = to_index(x+1, y);
@@ -136,7 +136,7 @@ class LDPCConfig : public dataframe::Config {
 
       for (size_t i = 0; i < N; i++) {
         auto [x, y] = to_coordinates(i);
-        if (obc && (x == 0 || x == system_size - 1)) {
+        if (obc && (y == 0 || y == system_size - 1)) {
           continue;
         }
 
@@ -169,7 +169,7 @@ class LDPCConfig : public dataframe::Config {
 
       for (size_t i = 0; i < N; i++) {
         auto [x, y] = to_coordinates(i);
-        if (obc && (x == 0 || x == system_size - 1)) {
+        if (obc && (y == 0 || y == system_size - 1)) {
           continue;
         }
 
@@ -258,6 +258,7 @@ class LDPCConfig : public dataframe::Config {
       } else if (model_type == LDPC_LATTICE_4) {
         A = generate_4body_lattice_interaction_matrix();
       }
+
 
       dataframe::DataSlide slide;
       sampler.add_samples(slide, A, rng);

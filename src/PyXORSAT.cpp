@@ -5,6 +5,7 @@
 #include "GraphClusteringSimulator.hpp"
 #include "GraphXORSATConfig.hpp"
 #include "RXPMDualConfig.hpp"
+#include "RPMCAConfig.hpp"
 #include "SlantedCheckerboardConfig.hpp"
 
 #include <PyDataFrame.hpp>
@@ -15,6 +16,7 @@ NB_MODULE(xorsat_bindings, m) {
   EXPORT_CONFIG(LDPCConfig);
   EXPORT_CONFIG(GraphXORSATConfig);
   EXPORT_CONFIG(RXPMDualConfig);
+  EXPORT_CONFIG(RPMCAConfig);
   EXPORT_CONFIG(SlantedCheckerboardConfig);
 
   EXPORT_SIMULATOR_DRIVER(CliffordCodeSimulator);
