@@ -61,7 +61,7 @@ class SlantedCheckerboardConfig : public dataframe::Config {
             add_row(A, to_include);
           }
 
-          bool include_onsite = single_site ? (randf() < p4) : false;
+          bool include_onsite = single_site ? (randf() > p4) : false;
           if (include_onsite) {
             std::vector<size_t> to_include = {to_index(x, y)};
             add_row(A, to_include);
