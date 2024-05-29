@@ -67,8 +67,8 @@ class GraphClusteringSimulator: public dataframe::Simulator {
       auto s2 = state->entropy({1}, 2);
       auto s = state->entropy({0, 1}, 2);
 
-      samples.emplace("entropy", s);
-      samples.emplace("mutual_information", s1 + s2 - s);
+      dataframe::utils::emplace(samples, "entropy", s);
+      dataframe::utils::emplace(samples, "mutual_information", s1 + s2 - s);
 
       return samples;
     }

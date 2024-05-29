@@ -77,7 +77,7 @@ class CliffordCodeSimulator: public dataframe::Simulator {
 
     void add_rank_samples(dataframe::data_t& samples, ParityCheckMatrix& matrix) {
       auto r = matrix.rank();
-      samples.emplace("rank", r);
+      dataframe::utils::emplace(samples, "rank", r);
     }
 
     void add_locality_samples(dataframe::data_t& samples, GeneratorMatrix& matrix) {
@@ -94,7 +94,7 @@ class CliffordCodeSimulator: public dataframe::Simulator {
         n++;
       }
 
-      samples.emplace("locality", s);
+      dataframe::utils::emplace(samples, "locality", s);
     }
 
     void add_core_size_samples(dataframe::data_t& samples, ParityCheckMatrix& matrix) {
@@ -108,8 +108,8 @@ class CliffordCodeSimulator: public dataframe::Simulator {
       }
 
       size_t core_size = H.num_rows;
-      samples.emplace("core_size", core_size);
-      samples.emplace("num_iters", n);
+      dataframe::utils::emplace(samples, "core_size", core_size);
+      dataframe::utils::emplace(samples, "num_iters", num_iters);
     }
 
 		virtual dataframe::data_t take_samples() override {
@@ -124,7 +124,6 @@ class CliffordCodeSimulator: public dataframe::Simulator {
         }
       }
 
-      //std::cout << "H = \n" << H.to_string() << std::endl;
       GeneratorMatrix G = H.to_generator_matrix();
 
       add_rank_samples(samples, H);
