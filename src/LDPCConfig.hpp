@@ -318,24 +318,19 @@ class LDPCConfig : public dataframe::Config {
 
     std::pair<std::vector<size_t>, std::vector<size_t>> bulk_symmetry_entropy_strip(size_t y0, size_t width) const {
       std::vector<bool> mask(Lx*Ly, false);
-      size_t n = 0;
+
+      std::vector<size_t> A;
       for (size_t x = 0; x < Lx; x++) {
-        for (size_t y = 0; y < Ly; y++) {
-          if (y >= y0 && y < y0 + width) {
-            size_t i = to_index(x, y);
-            mask[i] = true;
-            n++;
-          }
+        for (size_t y = 0; y < width; y++) {
+          size_t i = to_index(x, y + y0);
+          mask[i] = true;
+          A.push_back(i);
         }
       }
 
-      std::vector<size_t> A;
       std::vector<size_t> Abar;
-
       for (size_t i = 0; i < Lx*Ly; i++) {
-        if (mask[i]) {
-          A.push_back(i);
-        } else {
+        if (!mask[i]) {
           Abar.push_back(i);
         }
       }
@@ -344,9 +339,6 @@ class LDPCConfig : public dataframe::Config {
     }
 
     std::vector<double> bulk_symmetry_entropy(GeneratorMatrix& generators, size_t LA) const {
-      std::vector<size_t> all_sites(Lx*Ly);
-      std::iota(all_sites.begin(), all_sites.end(), 0);
-
       std::vector<double> samples(Ly);
       for (size_t y0 = 0; y0 < Ly; y0++) {
         auto [A, Abar] = bulk_symmetry_entropy_strip(y0, LA);
@@ -442,7 +434,7 @@ class LDPCConfig : public dataframe::Config {
       // Bulk symmetry entropy
       if (sample_bulk_symmetry) {
         std::vector<std::vector<double>> bulk_symmetry;
-        for (size_t i = 0; i < Ly; i++) {
+        for (size_t i = 1; i < Ly; i++) {
           std::vector<double> s = bulk_symmetry_entropy(G, i);
           bulk_symmetry.push_back(s);
         }
