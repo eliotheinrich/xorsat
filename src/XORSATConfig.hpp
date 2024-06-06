@@ -41,8 +41,6 @@ class XORSATConfig : public dataframe::Config {
       rng.seed(seed);
     }
 
-    XORSATConfig()=default;
-
     ~XORSATConfig()=default;
 
     virtual dataframe::DataSlide compute(uint32_t num_threads) {

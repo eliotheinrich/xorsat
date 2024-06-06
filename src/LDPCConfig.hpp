@@ -5,15 +5,20 @@
 #include <BinaryPolynomial.h>
 #include <Samplers.h>
 
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+
 #define LDPC_ERDOS 0
 #define LDPC_REGULAR 1
 #define LDPC_LATTICE_5 2
 #define LDPC_LATTICE_3 3
 #define LDPC_LATTICE_4 4
+#define LDPC_TRIANGULAR_PLAQUETTE 5
 
 class LDPCConfig : public dataframe::Config {
   private:
-    uint32_t system_size;
+    uint32_t Lx;
+    uint32_t Ly;
 
     double pr;
 
@@ -21,6 +26,8 @@ class LDPCConfig : public dataframe::Config {
     double pb;
     size_t k;
     bool obc;
+
+    bool avg_y;
 
     bool single_site;
 
@@ -37,7 +44,7 @@ class LDPCConfig : public dataframe::Config {
     }
 
     std::shared_ptr<ParityCheckMatrix> from_graph(const Graph<int>& g) {
-      std::shared_ptr<ParityCheckMatrix> A = std::make_shared<ParityCheckMatrix>(system_size, system_size);
+      std::shared_ptr<ParityCheckMatrix> A = std::make_shared<ParityCheckMatrix>(Lx, Lx);
 
       for (size_t a = 0; a < g.num_vertices; a++) {
         if (single_site) {
@@ -61,39 +68,39 @@ class LDPCConfig : public dataframe::Config {
     }
 
     std::shared_ptr<ParityCheckMatrix> generate_erdos_interaction_matrix() {
-      Graph<int> g = Graph<int>::erdos_renyi_graph(system_size, pb, &rng);
+      Graph<int> g = Graph<int>::erdos_renyi_graph(Lx, pb, &rng);
       return from_graph(g);
     }
 
     std::shared_ptr<ParityCheckMatrix> generate_regular_interaction_matrix() {
-      Graph<int> g = Graph<int>::random_regular_graph(system_size, k, &rng);
+      Graph<int> g = Graph<int>::random_regular_graph(Lx, k, &rng);
       return from_graph(g);
     }
 
-    size_t mod(int i) const {
-      int L = static_cast<int>(system_size);
+    size_t mod(int i, int L) const {
       return (i % L + L) % L;
     }
 
     std::pair<int, int> to_coordinates(size_t i) const {
-      int x = i % system_size;
-      int y = i / system_size;
+      int x = i % Lx;
+      int y = i / Lx;
       return std::make_pair(x, y); 
     }
 
     size_t to_index(int x, int y) const {
-      return mod(x) + mod(y) * system_size;
+      return mod(x, Lx) + mod(y, Ly) * Lx;
     }
 
     std::shared_ptr<ParityCheckMatrix> generate_5body_lattice_interaction_matrix() {
-      size_t N = system_size*system_size;
+      size_t N = Lx*Ly;
       std::shared_ptr<ParityCheckMatrix> A = std::make_shared<ParityCheckMatrix>(0, N);
 
-      for (size_t i = 0; i < system_size*system_size; i++) {
+      for (size_t i = 0; i < N; i++) {
         auto [x, y] = to_coordinates(i);
-        if (obc && (y == 0 || y == system_size - 1)) {
+        if (obc && (y == 0 || y == Ly - 1)) {
           continue;
         }
+
         size_t i1 = to_index(x+1, y);
         size_t i2 = to_index(x-1, y);
         size_t i3 = to_index(x, y+1);
@@ -131,12 +138,12 @@ class LDPCConfig : public dataframe::Config {
     }
 
     std::shared_ptr<ParityCheckMatrix> generate_4body_lattice_interaction_matrix() {
-      size_t N = system_size*system_size;
+      size_t N = Lx*Ly;
       std::shared_ptr<ParityCheckMatrix> A = std::make_shared<ParityCheckMatrix>(0, N);
 
       for (size_t i = 0; i < N; i++) {
         auto [x, y] = to_coordinates(i);
-        if (obc && (y == 0 || y == system_size - 1)) {
+        if (obc && (y == 0 || y == Ly - 1)) {
           continue;
         }
 
@@ -164,12 +171,12 @@ class LDPCConfig : public dataframe::Config {
     }
 
     std::shared_ptr<ParityCheckMatrix> generate_3body_lattice_interaction_matrix() {
-      size_t N = system_size*system_size;
+      size_t N = Lx*Ly;
       std::shared_ptr<ParityCheckMatrix> A = std::make_shared<ParityCheckMatrix>(0, N);
 
       for (size_t i = 0; i < N; i++) {
         auto [x, y] = to_coordinates(i);
-        if (obc && (y == 0 || y == system_size - 1)) {
+        if (obc && (y == 0 || y == Ly - 1)) {
           continue;
         }
 
@@ -215,9 +222,54 @@ class LDPCConfig : public dataframe::Config {
       return A;
     }
 
+    std::shared_ptr<ParityCheckMatrix> generate_triangular_plaquette_interaction_matrix() {
+      size_t N = Lx*Ly;
+      std::shared_ptr<ParityCheckMatrix> A = std::make_shared<ParityCheckMatrix>(0, N);
+
+      for (size_t i = 0; i < N; i++) {
+        auto [x, y] = to_coordinates(i);
+        if (obc && (y == 0 || y == Ly - 1)) {
+          continue;
+        }
+
+        size_t i1 = to_index(x, y-1);
+        size_t i2 = to_index(x-1, y-1);
+
+        std::vector<size_t> inds{i1, i2};
+        std::vector<size_t> to_include;
+        if (single_site) {
+          // Impurity turns 3-body term into single-site term
+          to_include.push_back(i);
+          if (randf() < pr) {
+            for (auto j : inds) {
+              to_include.push_back(j);
+            }
+          }
+        } else {
+          // Impurity removes single-site as well
+          if (randf() < pr) {
+            to_include.push_back(i);
+            for (auto j : inds) {
+              to_include.push_back(j);
+            }
+          }
+        }
+
+        std::vector<bool> row(N, false);
+        for (auto j : to_include) {
+          row[j] = true;
+        }
+
+        A->append_row(row);
+      }
+
+      return A;
+    }
+
 	public:
     LDPCConfig(dataframe::Params &params) : dataframe::Config(params), sampler(params) {
-      system_size = dataframe::utils::get<int>(params, "system_size");
+      Lx = dataframe::utils::get<int>(params, "system_size");
+      Ly = dataframe::utils::get<int>(params, "Ly", Lx);
       pr = dataframe::utils::get<double>(params, "pr", 0.0);
 
       model_type = dataframe::utils::get<int>(params, "model_type", LDPC_ERDOS);
@@ -225,8 +277,9 @@ class LDPCConfig : public dataframe::Config {
         pb = dataframe::utils::get<double>(params, "pb", 0.0);
       } else if (model_type == LDPC_REGULAR) {
         k = dataframe::utils::get<int>(params, "k", 0);
-      } else if (model_type == LDPC_LATTICE_5 || model_type == LDPC_LATTICE_3 || model_type == LDPC_LATTICE_4) {
+      } else if (model_type == LDPC_LATTICE_5 || model_type == LDPC_LATTICE_3 || model_type == LDPC_LATTICE_4 || model_type == LDPC_TRIANGULAR_PLAQUETTE) {
         obc = dataframe::utils::get<int>(params, "obc", true);
+        avg_y = dataframe::utils::get<int>(params, "avg_y", !obc);
       }
 
       single_site = dataframe::utils::get<int>(params, "single_site", true);
@@ -240,9 +293,99 @@ class LDPCConfig : public dataframe::Config {
       rng.seed(seed);
     }
 
-    LDPCConfig()=default;
-
     ~LDPCConfig()=default;
+
+    std::vector<size_t> vector_complement(const std::vector<size_t>& sites, const std::vector<size_t>& all_sites) const {
+      std::vector<bool> mask(all_sites.size(), false);
+      for (size_t i = 0; i < sites.size(); i++) {
+        mask[sites[i]] = true;
+      }
+
+      std::vector<size_t> complement;
+      for (size_t i = 0; i < all_sites.size(); i++) {
+        if (!mask[i]) {
+          complement.push_back(i);
+        }
+      }
+
+      return complement;
+    }
+
+    std::pair<std::vector<size_t>, std::vector<size_t>> bulk_symmetry_entropy_strip(size_t y0, size_t width) const {
+      std::vector<bool> mask(Lx*Ly, false);
+      size_t n = 0;
+      for (size_t x = 0; x < Lx; x++) {
+        for (size_t y = 0; y < Ly; y++) {
+          if (y >= y0 && y < y0 + width) {
+            size_t i = to_index(x, y);
+            mask[i] = true;
+            n++;
+          }
+        }
+      }
+
+      std::vector<size_t> A;
+      std::vector<size_t> Abar;
+
+      for (size_t i = 0; i < Lx*Ly; i++) {
+        if (mask[i]) {
+          A.push_back(i);
+        } else {
+          Abar.push_back(i);
+        }
+      }
+
+      return {A, Abar};
+    }
+
+    std::vector<double> bulk_symmetry_entropy(GeneratorMatrix& generators, size_t LA) const {
+      std::vector<size_t> all_sites(Lx*Ly);
+      std::iota(all_sites.begin(), all_sites.end(), 0);
+
+      std::vector<double> samples(Ly);
+      for (size_t y0 = 0; y0 < Ly; y0++) {
+        auto [A, Abar] = bulk_symmetry_entropy_strip(y0, LA);
+        samples[y0] = generators.sym(A, Abar);
+      }
+
+      return samples;
+    }
+
+    std::pair<std::vector<size_t>, std::vector<size_t>> bulk_mi_strips(size_t y0, size_t seperation) const {
+      std::vector<size_t> A(Lx);
+      std::vector<size_t> B(Lx);
+
+      for (size_t i = 0; i < Lx; i++) {
+        A[i] = to_index(i, y0);
+        B[i] = to_index(i, y0 + seperation);
+      }
+
+      return {A, B};
+    }
+
+    std::vector<double> bulk_mutual_information(GeneratorMatrix& generators) const {
+      std::vector<double> samples(Ly);
+      for (size_t y = 0; y < Ly; y++) {
+        auto [A, B] = bulk_mi_strips(y, Ly/2);
+        samples[y] = generators.sym(A, B);
+      }
+
+      return samples;
+    }
+
+    //std::vector<double> boundary_symmetry_entropy(GeneratorMatrix& generators, const std::vector<size_t>& sites) const {
+    //  GeneratorMatrix boundary_generators = generators.supported(sites);
+    //  size_t num_sites = sites.size();
+    //  std::vector<double> S(num_sites);
+    //  for (size_t i = 0; i < num_sites; i++) {
+    //    std::vector<size_t> A(sites.begin(), sites.begin() + i);
+    //    std::vector<size_t> Ab(sites.begin() + i, sites.end());
+
+    //    S[i] = boundary_generators.sym(A, Ab);
+    //  }
+
+    //  return S;
+    //}
 
     virtual dataframe::DataSlide compute(uint32_t num_threads) {
       auto start = std::chrono::high_resolution_clock::now();
@@ -257,11 +400,56 @@ class LDPCConfig : public dataframe::Config {
         A = generate_3body_lattice_interaction_matrix();
       } else if (model_type == LDPC_LATTICE_4) {
         A = generate_4body_lattice_interaction_matrix();
+      } else if (model_type == LDPC_TRIANGULAR_PLAQUETTE) {
+        A = generate_triangular_plaquette_interaction_matrix();
       }
 
 
       dataframe::DataSlide slide;
       sampler.add_samples(slide, A, rng);
+
+      // ----------------- TEMP ----------------- //
+      auto G = A->to_generator_matrix();
+
+      //std::vector<size_t> boundary(Lx);
+
+      //for (size_t i = 0; i < Lx; i++) {
+      //  boundary[i] = i;
+      //}
+
+      //auto sym = boundary_symmetry_entropy(G, boundary);
+      //slide.add_data("bottom_boundary_sym", sym.size());
+      //slide.push_samples_to_data("bottom_boundary_sym", sym);
+
+      //for (size_t i = 0; i < Lx; i++) {
+      //  size_t idx = to_index(i, Ly - 1);
+      //  boundary[i] = idx;
+      //}
+
+      //sym = boundary_symmetry_entropy(G, boundary);
+      //slide.add_data("top_boundary_sym", sym.size());
+      //slide.push_samples_to_data("top_boundary_sym", sym);
+
+      //slide.add_data("boundary_mutual_information");
+      //auto mutual_information = boundary_mutual_information(G, boundary);
+      //slide.push_samples_to_data("boundary_mutual_information", std::vector<std::vector<double>>{mutual_information});
+
+      // Bulk symmetry entropy
+      std::vector<std::vector<double>> bulk_symmetry;
+      for (size_t i = 0; i < Ly; i++) {
+        std::vector<double> s = bulk_symmetry_entropy(G, i);
+        bulk_symmetry.push_back(s);
+      }
+
+      slide.add_data("bulk_symmetry", bulk_symmetry.size());
+      slide.push_samples_to_data("bulk_symmetry", bulk_symmetry);
+
+      // Bulk mutual information
+      slide.add_data("bulk_mutual_information");
+      auto mutual_information = bulk_mutual_information(G);
+      slide.push_samples_to_data("bulk_mutual_information", std::vector<std::vector<double>>{mutual_information});
+
+      // ----------------- TEMP ----------------- //
 
       auto end = std::chrono::high_resolution_clock::now();
       std::chrono::duration<double, std::micro> duration = end - start;

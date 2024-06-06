@@ -89,8 +89,6 @@ class SlantedCheckerboardConfig : public dataframe::Config {
       rng.seed(seed);
     }
 
-    SlantedCheckerboardConfig()=default;
-
     ~SlantedCheckerboardConfig()=default;
 
     virtual dataframe::DataSlide compute(uint32_t num_threads) {

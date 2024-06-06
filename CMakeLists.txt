@@ -16,7 +16,7 @@ message("Compiler: " ${CMAKE_CXX_COMPILER})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 #set(CMAKE_DEBUG_POSTFIX "d")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-unused-function -Wno-deprecated-declarations -Wno-sign-compare -pthread")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-all -pthread")
 
 # Ignore annoying Intel warnings
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel")
@@ -60,6 +60,13 @@ else()
 endif()
 
 FetchContent_Declare(
+  glaze
+  GIT_REPOSITORY https://github.com/stephenberry/glaze.git
+  GIT_TAG main
+)
+list(APPEND EXTERNALS glaze)
+
+FetchContent_Declare(
     eigen
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen
     GIT_TAG master
@@ -79,46 +86,49 @@ include_directories(
     ${dataframe_SOURCE_DIR}/src
     ${utils_SOURCE_DIR}/src
     ${eigen_SOURCE_DIR}
+    ${glaze_SOURCE_DIR}/include
 )
 
-# Adding Python bindings
-find_package(Python 3.10 
-    REQUIRED COMPONENTS Interpreter Development.Module
-    OPTIONAL_COMPONENTS Development.SABIModule
-)
+if (DEFINED XORSAT_BUILDING_PY_BINDINGS)
+    # Adding Python bindings
+    find_package(Python 3.10 
+        REQUIRED COMPONENTS Interpreter Development.Module
+        OPTIONAL_COMPONENTS Development.SABIModule
+    )
 
-execute_process(
-    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
-    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE NB_DIR
-)
-list(APPEND CMAKE_PREFIX_PATH "${NB_DIR}")
-find_package(nanobind CONFIG REQUIRED)
+    execute_process(
+        COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+        OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE NB_DIR
+    )
+    list(APPEND CMAKE_PREFIX_PATH "${NB_DIR}")
+    find_package(nanobind CONFIG REQUIRED)
 
-nanobind_add_module(
-    xorsat_bindings 
-    STABLE_ABI
-    NB_STATIC
-    src/PyXORSAT.cpp
-    src/XORSATConfig.hpp
-    src/LDPCConfig.hpp
-    src/CliffordCodeSimulator.hpp
-    src/GraphClusteringSimulator.hpp
-    src/GraphXORSATConfig.hpp
-    src/RXPMDualConfig.hpp
-    src/RPMCAConfig.hpp
-    src/SlantedCheckerboardConfig.hpp
-)
+    nanobind_add_module(
+        xorsat_bindings 
+        STABLE_ABI
+        NB_STATIC
+        src/PyXORSAT.cpp
+        src/XORSATConfig.hpp
+        src/LDPCConfig.hpp
+        src/CliffordCodeSimulator.hpp
+        src/GraphClusteringSimulator.hpp
+        src/GraphXORSATConfig.hpp
+        src/RXPMDualConfig.hpp
+        src/RPMCAConfig.hpp
+        src/SlantedCheckerboardConfig.hpp
+    )
 
-set_target_properties(xorsat_bindings PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_include_directories(xorsat_bindings PRIVATE src)
-target_link_libraries(xorsat_bindings PRIVATE linear_code clifford_state dataframe)
+    set_target_properties(xorsat_bindings PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_include_directories(xorsat_bindings PRIVATE src)
+    target_link_libraries(xorsat_bindings PRIVATE linear_code clifford_state dataframe)
 
-install(
-    TARGETS xorsat_bindings
-    LIBRARY DESTINATION pyxorsat
-)
-
-add_executable(main src/test.cpp)
-target_include_directories(main PRIVATE src)
-target_link_libraries(main PRIVATE linear_code dataframe quantum_state clifford_state)
+    install(
+        TARGETS xorsat_bindings
+        LIBRARY DESTINATION pyxorsat
+    )
+else()
+    add_executable(main src/test.cpp)
+    target_include_directories(main PRIVATE src)
+    target_link_libraries(main PRIVATE linear_code dataframe quantum_state clifford_state)
+endif()
 

@@ -44,8 +44,6 @@ class GraphXORSATConfig : public dataframe::Config {
       rng.seed(seed);
     }
 
-    GraphXORSATConfig()=default;
-
     ~GraphXORSATConfig()=default;
 
     virtual dataframe::DataSlide compute(uint32_t num_threads) {

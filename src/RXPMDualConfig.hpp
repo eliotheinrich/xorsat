@@ -35,8 +35,6 @@ class RXPMDualConfig : public dataframe::Config {
       rng.seed(seed);
     }
 
-    RXPMDualConfig()=default;
-
     ~RXPMDualConfig()=default;
 
     QuantumCHPState prepare_state() {

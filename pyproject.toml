@@ -22,8 +22,9 @@ wheel.py-api = "cp312"
 cmake.verbose = true
 
 [tool.scikit-build.cmake.define]
-UTILS_SOURCE="/data/heinriea/utils"
-DATAFRAME_SOURCE="/data/heinriea/dataframe"
+XORSAT_BUILDING_PY_BINDINGS = "On"
+DATAFRAME_SOURCE = "/Users/eliotheinrich/Projects/dataframe"
+UTILS_SOURCE = "/Users/eliotheinrich/Projects/utils"
 
 [tool.cibuildwheel]
 build-verbosity = 1

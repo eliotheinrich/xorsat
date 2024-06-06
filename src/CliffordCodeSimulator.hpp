@@ -109,7 +109,7 @@ class CliffordCodeSimulator: public dataframe::Simulator {
 
       size_t core_size = H.num_rows;
       dataframe::utils::emplace(samples, "core_size", core_size);
-      dataframe::utils::emplace(samples, "num_iters", num_iters);
+      dataframe::utils::emplace(samples, "num_iters", n);
     }
 
 		virtual dataframe::data_t take_samples() override {
