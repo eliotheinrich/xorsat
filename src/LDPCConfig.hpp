@@ -33,6 +33,9 @@ class LDPCConfig : public dataframe::Config {
 
     LinearCodeSampler sampler;
 
+    bool sample_bulk_symmetry;
+    bool sample_bulk_mutual_information;
+
     std::minstd_rand rng;
 
     uint32_t rand() {
@@ -280,6 +283,8 @@ class LDPCConfig : public dataframe::Config {
       } else if (model_type == LDPC_LATTICE_5 || model_type == LDPC_LATTICE_3 || model_type == LDPC_LATTICE_4 || model_type == LDPC_TRIANGULAR_PLAQUETTE) {
         obc = dataframe::utils::get<int>(params, "obc", true);
         avg_y = dataframe::utils::get<int>(params, "avg_y", !obc);
+        sample_bulk_symmetry = dataframe::utils::get<int>(params, "sample_bulk_symmetry", false);
+        sample_bulk_mutual_information = dataframe::utils::get<int>(params, "sample_bulk_mutual_information", false);
       }
 
       single_site = dataframe::utils::get<int>(params, "single_site", true);
@@ -435,19 +440,23 @@ class LDPCConfig : public dataframe::Config {
       //slide.push_samples_to_data("boundary_mutual_information", std::vector<std::vector<double>>{mutual_information});
 
       // Bulk symmetry entropy
-      std::vector<std::vector<double>> bulk_symmetry;
-      for (size_t i = 0; i < Ly; i++) {
-        std::vector<double> s = bulk_symmetry_entropy(G, i);
-        bulk_symmetry.push_back(s);
+      if (sample_bulk_symmetry) {
+        std::vector<std::vector<double>> bulk_symmetry;
+        for (size_t i = 0; i < Ly; i++) {
+          std::vector<double> s = bulk_symmetry_entropy(G, i);
+          bulk_symmetry.push_back(s);
+        }
+
+        slide.add_data("bulk_symmetry", bulk_symmetry.size());
+        slide.push_samples_to_data("bulk_symmetry", bulk_symmetry);
       }
 
-      slide.add_data("bulk_symmetry", bulk_symmetry.size());
-      slide.push_samples_to_data("bulk_symmetry", bulk_symmetry);
-
-      // Bulk mutual information
-      slide.add_data("bulk_mutual_information");
-      auto mutual_information = bulk_mutual_information(G);
-      slide.push_samples_to_data("bulk_mutual_information", std::vector<std::vector<double>>{mutual_information});
+      if (sample_bulk_mutual_information) {
+        // Bulk mutual information
+        slide.add_data("bulk_mutual_information");
+        auto mutual_information = bulk_mutual_information(G);
+        slide.push_samples_to_data("bulk_mutual_information", std::vector<std::vector<double>>{mutual_information});
+      }
 
       // ----------------- TEMP ----------------- //
 
