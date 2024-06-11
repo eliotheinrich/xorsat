@@ -34,6 +34,7 @@ class LDPCConfig : public dataframe::Config {
     LinearCodeSampler sampler;
 
     bool sample_bulk_symmetry;
+    size_t max_width;
     bool sample_bulk_mutual_information;
 
     std::minstd_rand rng;
@@ -272,7 +273,6 @@ class LDPCConfig : public dataframe::Config {
 	public:
     LDPCConfig(dataframe::Params &params) : dataframe::Config(params), sampler(params) {
       Lx = dataframe::utils::get<int>(params, "system_size");
-      Ly = dataframe::utils::get<int>(params, "Ly", Lx);
       pr = dataframe::utils::get<double>(params, "pr", 0.0);
 
       model_type = dataframe::utils::get<int>(params, "model_type", LDPC_ERDOS);
@@ -281,9 +281,11 @@ class LDPCConfig : public dataframe::Config {
       } else if (model_type == LDPC_REGULAR) {
         k = dataframe::utils::get<int>(params, "k", 0);
       } else if (model_type == LDPC_LATTICE_5 || model_type == LDPC_LATTICE_3 || model_type == LDPC_LATTICE_4 || model_type == LDPC_TRIANGULAR_PLAQUETTE) {
+        Ly = dataframe::utils::get<int>(params, "Ly", Lx);
         obc = dataframe::utils::get<int>(params, "obc", true);
         avg_y = dataframe::utils::get<int>(params, "avg_y", !obc);
         sample_bulk_symmetry = dataframe::utils::get<int>(params, "sample_bulk_symmetry", false);
+        max_width = dataframe::utils::get<int>(params, "max_width", Ly);
         sample_bulk_mutual_information = dataframe::utils::get<int>(params, "sample_bulk_mutual_information", false);
       }
 
@@ -434,7 +436,7 @@ class LDPCConfig : public dataframe::Config {
       // Bulk symmetry entropy
       if (sample_bulk_symmetry) {
         std::vector<std::vector<double>> bulk_symmetry;
-        for (size_t i = 1; i < Ly; i++) {
+        for (size_t i = 1; i < max_width; i++) {
           std::vector<double> s = bulk_symmetry_entropy(G, i);
           bulk_symmetry.push_back(s);
         }
