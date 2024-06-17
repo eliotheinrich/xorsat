@@ -158,9 +158,9 @@ class LDPCConfig : public dataframe::Config {
 
         std::vector<size_t> to_include;
         if (randf() < pr) {
-          to_include = {i};
-        } else {
           to_include = {i1, i2, i3, i4};
+        } else {
+          to_include = {i};
         }
 
         std::vector<bool> row(N, false);
@@ -344,6 +344,7 @@ class LDPCConfig : public dataframe::Config {
       std::vector<double> samples(Ly);
       for (size_t y0 = 0; y0 < Ly; y0++) {
         auto [A, Abar] = bulk_symmetry_entropy_strip(y0, LA);
+        std::cout << fmt::format("A = {}\nAbar = {}\n", A, Abar);
         samples[y0] = generators.sym(A, Abar);
       }
 
