@@ -15,6 +15,133 @@
 #define LDPC_LATTICE_4 4
 #define LDPC_TRIANGULAR_PLAQUETTE 5
 
+
+class BoundarySymmetrySampler {
+  private:
+    size_t Lx;
+    size_t Ly;
+
+    bool sample_bulk_symmetry;
+    size_t max_width;
+
+    bool sample_bulk_mutual_information;
+
+    size_t mod(int i, int L) const {
+      return (i % L + L) % L;
+    }
+
+    std::pair<int, int> to_coordinates(size_t i) const {
+      int x = i % Lx;
+      int y = i / Lx;
+      return std::make_pair(x, y); 
+    }
+
+    size_t to_index(int x, int y) const {
+      return mod(x, Lx) + mod(y, Lx) * Lx;
+    }
+
+  public:
+    BoundarySymmetrySampler()=default;
+    BoundarySymmetrySampler(dataframe::Params& params, size_t Lx, size_t Ly) : Lx(Lx), Ly(Ly) {
+      sample_bulk_symmetry = dataframe::utils::get<int>(params, "sample_bulk_symmetry", false);
+      max_width = dataframe::utils::get<int>(params, "max_width", Ly);
+      sample_bulk_mutual_information = dataframe::utils::get<int>(params, "sample_bulk_mutual_information", false);
+    }
+
+    std::vector<size_t> vector_complement(const std::vector<size_t>& sites, const std::vector<size_t>& all_sites) const {
+      std::vector<bool> mask(all_sites.size(), false);
+      for (size_t i = 0; i < sites.size(); i++) {
+        mask[sites[i]] = true;
+      }
+
+      std::vector<size_t> complement;
+      for (size_t i = 0; i < all_sites.size(); i++) {
+        if (!mask[i]) {
+          complement.push_back(i);
+        }
+      }
+
+      return complement;
+    }
+
+    std::pair<std::vector<size_t>, std::vector<size_t>> bulk_symmetry_entropy_strip(size_t y0, size_t width) const {
+      std::vector<bool> mask(Lx*Ly, false);
+
+      std::vector<size_t> A;
+      for (size_t x = 0; x < Lx; x++) {
+        for (size_t y = 0; y < width; y++) {
+          size_t i = to_index(x, y + y0);
+          mask[i] = true;
+          A.push_back(i);
+        }
+      }
+
+      std::vector<size_t> Abar;
+      for (size_t i = 0; i < Lx*Ly; i++) {
+        if (!mask[i]) {
+          Abar.push_back(i);
+        }
+      }
+
+      return {A, Abar};
+    }
+
+    std::vector<double> bulk_symmetry_entropy(GeneratorMatrix& generators, size_t LA) const {
+      std::vector<double> samples(Ly);
+      for (size_t y0 = 0; y0 < Ly; y0++) {
+        auto [A, Abar] = bulk_symmetry_entropy_strip(y0, LA);
+        samples[y0] = generators.sym(A, Abar);
+      }
+
+      return samples;
+    }
+
+    std::pair<std::vector<size_t>, std::vector<size_t>> bulk_mi_strips(size_t y0, size_t seperation) const {
+      std::vector<size_t> A(Lx);
+      std::vector<size_t> B(Lx);
+
+      for (size_t i = 0; i < Lx; i++) {
+        A[i] = to_index(i, y0);
+        B[i] = to_index(i, y0 + seperation);
+      }
+
+      return {A, B};
+    }
+
+    std::vector<double> bulk_mutual_information(GeneratorMatrix& generators) const {
+      std::vector<double> samples(Ly);
+      for (size_t y = 0; y < Ly; y++) {
+        auto [A, B] = bulk_mi_strips(y, Ly/2);
+        samples[y] = generators.sym(A, B);
+      }
+
+      return samples;
+    }
+
+    void add_samples(GeneratorMatrix& G, dataframe::DataSlide& slide) const {
+      // Bulk symmetry entropy
+      if (sample_bulk_symmetry) {
+        std::vector<std::vector<double>> bulk_symmetry;
+        for (size_t i = 1; i < max_width; i++) {
+          std::vector<double> s = bulk_symmetry_entropy(G, i);
+          bulk_symmetry.push_back(s);
+        }
+
+        slide.add_data("bulk_symmetry", bulk_symmetry.size());
+        slide.push_samples_to_data("bulk_symmetry", bulk_symmetry);
+      }
+
+      // Bulk mutual information
+      if (sample_bulk_mutual_information) {
+        slide.add_data("bulk_mutual_information");
+        auto mutual_information = bulk_mutual_information(G);
+        slide.push_samples_to_data("bulk_mutual_information", std::vector<std::vector<double>>{mutual_information});
+      }
+    }
+};
+
+
+
 class LDPCConfig : public dataframe::Config {
   private:
     uint32_t Lx;
@@ -32,10 +159,7 @@ class LDPCConfig : public dataframe::Config {
     bool single_site;
 
     LinearCodeSampler sampler;
-
-    bool sample_bulk_symmetry;
-    size_t max_width;
-    bool sample_bulk_mutual_information;
+    BoundarySymmetrySampler sym_sampler;
 
     std::minstd_rand rng;
 
@@ -184,16 +308,8 @@ class LDPCConfig : public dataframe::Config {
           continue;
         }
 
-        size_t i1, i2;
-        if (x % 2 == y % 2) {
-          // red site
-          i1 = to_index(x, y+1);
-          i2 = to_index(x, y-1);
-        } else {
-          // black site
-          i1 = to_index(x+1, y);
-          i2 = to_index(x-1, y);
-        }
+        size_t i1 = to_index(x, y+1);
+        size_t i2 = to_index(x+1, y+1);
 
         std::vector<size_t> inds{i1, i2};
         std::vector<size_t> to_include;
@@ -284,9 +400,7 @@ class LDPCConfig : public dataframe::Config {
         Ly = dataframe::utils::get<int>(params, "Ly", Lx);
         obc = dataframe::utils::get<int>(params, "obc", true);
         avg_y = dataframe::utils::get<int>(params, "avg_y", !obc);
-        sample_bulk_symmetry = dataframe::utils::get<int>(params, "sample_bulk_symmetry", false);
-        max_width = dataframe::utils::get<int>(params, "max_width", Ly);
-        sample_bulk_mutual_information = dataframe::utils::get<int>(params, "sample_bulk_mutual_information", false);
+        sym_sampler = BoundarySymmetrySampler(params, Lx, Ly);
       }
 
       single_site = dataframe::utils::get<int>(params, "single_site", true);
@@ -301,91 +415,6 @@ class LDPCConfig : public dataframe::Config {
     }
 
     ~LDPCConfig()=default;
-
-    std::vector<size_t> vector_complement(const std::vector<size_t>& sites, const std::vector<size_t>& all_sites) const {
-      std::vector<bool> mask(all_sites.size(), false);
-      for (size_t i = 0; i < sites.size(); i++) {
-        mask[sites[i]] = true;
-      }
-
-      std::vector<size_t> complement;
-      for (size_t i = 0; i < all_sites.size(); i++) {
-        if (!mask[i]) {
-          complement.push_back(i);
-        }
-      }
-
-      return complement;
-    }
-
-    std::pair<std::vector<size_t>, std::vector<size_t>> bulk_symmetry_entropy_strip(size_t y0, size_t width) const {
-      std::vector<bool> mask(Lx*Ly, false);
-
-      std::vector<size_t> A;
-      for (size_t x = 0; x < Lx; x++) {
-        for (size_t y = 0; y < width; y++) {
-          size_t i = to_index(x, y + y0);
-          mask[i] = true;
-          A.push_back(i);
-        }
-      }
-
-      std::vector<size_t> Abar;
-      for (size_t i = 0; i < Lx*Ly; i++) {
-        if (!mask[i]) {
-          Abar.push_back(i);
-        }
-      }
-
-      return {A, Abar};
-    }
-
-    std::vector<double> bulk_symmetry_entropy(GeneratorMatrix& generators, size_t LA) const {
-      std::vector<double> samples(Ly);
-      for (size_t y0 = 0; y0 < Ly; y0++) {
-        auto [A, Abar] = bulk_symmetry_entropy_strip(y0, LA);
-        std::cout << fmt::format("A = {}\nAbar = {}\n", A, Abar);
-        samples[y0] = generators.sym(A, Abar);
-      }
-
-      return samples;
-    }
-
-    std::pair<std::vector<size_t>, std::vector<size_t>> bulk_mi_strips(size_t y0, size_t seperation) const {
-      std::vector<size_t> A(Lx);
-      std::vector<size_t> B(Lx);
-
-      for (size_t i = 0; i < Lx; i++) {
-        A[i] = to_index(i, y0);
-        B[i] = to_index(i, y0 + seperation);
-      }
-
-      return {A, B};
-    }
-
-    std::vector<double> bulk_mutual_information(GeneratorMatrix& generators) const {
-      std::vector<double> samples(Ly);
-      for (size_t y = 0; y < Ly; y++) {
-        auto [A, B] = bulk_mi_strips(y, Ly/2);
-        samples[y] = generators.sym(A, B);
-      }
-
-      return samples;
-    }
-
-    //std::vector<double> boundary_symmetry_entropy(GeneratorMatrix& generators, const std::vector<size_t>& sites) const {
-    //  GeneratorMatrix boundary_generators = generators.supported(sites);
-    //  size_t num_sites = sites.size();
-    //  std::vector<double> S(num_sites);
-    //  for (size_t i = 0; i < num_sites; i++) {
-    //    std::vector<size_t> A(sites.begin(), sites.begin() + i);
-    //    std::vector<size_t> Ab(sites.begin() + i, sites.end());
-
-    //    S[i] = boundary_generators.sym(A, Ab);
-    //  }
-
-    //  return S;
-    //}
 
     virtual dataframe::DataSlide compute(uint32_t num_threads) {
       auto start = std::chrono::high_resolution_clock::now();
@@ -411,49 +440,7 @@ class LDPCConfig : public dataframe::Config {
       // ----------------- TEMP ----------------- //
       auto G = A->to_generator_matrix();
 
-      //std::vector<size_t> boundary(Lx);
-
-      //for (size_t i = 0; i < Lx; i++) {
-      //  boundary[i] = i;
-      //}
-
-      //auto sym = boundary_symmetry_entropy(G, boundary);
-      //slide.add_data("bottom_boundary_sym", sym.size());
-      //slide.push_samples_to_data("bottom_boundary_sym", sym);
-
-      //for (size_t i = 0; i < Lx; i++) {
-      //  size_t idx = to_index(i, Ly - 1);
-      //  boundary[i] = idx;
-      //}
-
-      //sym = boundary_symmetry_entropy(G, boundary);
-      //slide.add_data("top_boundary_sym", sym.size());
-      //slide.push_samples_to_data("top_boundary_sym", sym);
-
-      //slide.add_data("boundary_mutual_information");
-      //auto mutual_information = boundary_mutual_information(G, boundary);
-      //slide.push_samples_to_data("boundary_mutual_information", std::vector<std::vector<double>>{mutual_information});
-
-      // Bulk symmetry entropy
-      if (sample_bulk_symmetry) {
-        std::vector<std::vector<double>> bulk_symmetry;
-        for (size_t i = 1; i < max_width; i++) {
-          std::vector<double> s = bulk_symmetry_entropy(G, i);
-          bulk_symmetry.push_back(s);
-        }
-
-        slide.add_data("bulk_symmetry", bulk_symmetry.size());
-        slide.push_samples_to_data("bulk_symmetry", bulk_symmetry);
-      }
-
-      if (sample_bulk_mutual_information) {
-        // Bulk mutual information
-        slide.add_data("bulk_mutual_information");
-        auto mutual_information = bulk_mutual_information(G);
-        slide.push_samples_to_data("bulk_mutual_information", std::vector<std::vector<double>>{mutual_information});
-      }
-
-      // ----------------- TEMP ----------------- //
+      sym_sampler.add_samples(G, slide);
 
       auto end = std::chrono::high_resolution_clock::now();
       std::chrono::duration<double, std::micro> duration = end - start;

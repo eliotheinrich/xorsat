@@ -2,38 +2,134 @@
 
 #include "Frame.h"
 #include <BinaryPolynomial.h>
-#include <Samplers.h>
+#include <Graph.hpp>
+
+
+class FourBodyGraphGenerators {
+  private:
+    size_t mod(int i) const {
+      return (i % L + L) % L;
+    }
+
+    std::pair<int, int> to_coordinates(size_t i) const {
+      int x = i % L;
+      int y = i / L;
+      return std::make_pair(x, y); 
+    }
+
+    size_t to_index(int x, int y) const {
+      return mod(x) + mod(y) * L;
+    }
+
+  public:
+    int L;
+    
+    Graph<int, int> g;
+    Graph<int, int> dual_g;
+
+    std::set<size_t> break_impurities;
+
+    FourBodyGraphGenerators()=default;
+
+    FourBodyGraphGenerators(size_t L) : L(L) {
+      g = Graph(2*L*L);
+      dual_g = Graph(L*L);
+
+      for (size_t x = 0; x < L; x++) {
+        for (size_t y = 0; y < L; y++) {
+          // Horizontal in first subsystem
+          size_t i1 = to_index(x, y);
+          size_t i2 = to_index(x+1, y);
+          g.add_edge(i1, i2);
+
+          // Vertical in second subsystem
+          size_t j1 = to_index(x, y)   + L*L;
+          size_t j2 = to_index(x, y+1) + L*L;
+          g.add_edge(j1, j2);
+        }
+      }
+    }
+
+    void add_field_impurity(int x, int y) {
+      size_t i = to_index(x, y);
+      g.add_edge(i, i + L*L);
+    }
+
+    void add_break_impurity_horizontal(int x, int y) {
+//std::cout << fmt::format("Calling add_break_impurity_horizontal at {}, {}\n", x, y);
+      size_t i1 = to_index(x, y);
+      size_t i2 = to_index(x+1, y);
+      g.remove_edge(i1, i2);
+
+      size_t i3 = to_index(x, y-1);
+      std::cout << fmt::format("Removing edge between ({}, {})\n", i1, i2);
+      std::cout << fmt::format("Adding edge ({}, {}) to dual graph\n", i1, i3);
+      dual_g.add_edge(i1, i3);
+    }
+
+    void add_break_impurity_vertical(int x, int y) {
+//std::cout << fmt::format("Calling add_break_impurity_vertical at {}, {}\n", x, y);
+      size_t i1 = to_index(x, y)   + L*L;
+      size_t i2 = to_index(x, y+1) + L*L;
+      g.remove_edge(i1, i2);
+
+      i1 = i1 - L*L;
+      size_t i3 = to_index(x-1, y);
+      std::cout << fmt::format("Removing edge between ({}, {})\n", i1, i2 - L*L);
+      std::cout << fmt::format("Adding edge ({}, {}) to dual graph\n", i1, i3);
+      dual_g.add_edge(i1, i3);
+    }
+
+    void add_break_impurity(int x, int y) {
+      size_t i = to_index(x, y);
+
+      break_impurities.insert(i);
+//std::cout << fmt::format("Calling add_break_impurity. break_impurities = {}\n", break_impurities);
+
+      size_t i1 = to_index(x+1, y);
+      if (break_impurities.contains(i1)) {
+        add_break_impurity_vertical(x+1, y);
+      }
+
+      size_t i2 = to_index(x-1, y);
+      if (break_impurities.contains(i2)) {
+        add_break_impurity_vertical(x, y);
+      }
+
+      size_t i3 = to_index(x, y+1);
+      if (break_impurities.contains(i3)) {
+        add_break_impurity_horizontal(x, y+1);
+      }
+
+      size_t i4 = to_index(x, y-1);
+      if (break_impurities.contains(i4)) {
+        add_break_impurity_horizontal(x, y);
+      }
+    }
+
+    std::vector<std::set<uint32_t>> get_components() const {
+      return g.component_partition();
+    }
+
+    int get_rank() const {
+      auto components = get_components();
+      return components.size() - dual_g.num_loops() - 1;
+    }
+};
 
 class GraphXORSATConfig : public dataframe::Config {
   private:
-    uint32_t num_variables;
-    uint32_t k;
-    uint32_t num_rows;
+    size_t L;
+    double p;
 
-    InterfaceSampler sampler;
+    FourBodyGraphGenerators fbg;
 
     std::minstd_rand rng;
 
-    std::vector<uint32_t> draw_random_variables() {
-      std::vector<uint32_t> result(num_variables);
-      std::iota(result.begin(), result.end(), 0);
-      std::shuffle(result.begin(), result.end(), rng);
-      result.resize(k);
-      return result;
-    }
-
 	public:
-    GraphXORSATConfig(dataframe::Params &params) : dataframe::Config(params), sampler(params) {
-      num_variables = dataframe::utils::get<int>(params, "system_size");
-      k = dataframe::utils::get<int>(params, "k");
-      if (k != 2) {
-        throw std::invalid_argument("Only k = 2 implemented for this simulator.");
-      }
-      num_rows = dataframe::utils::get<int>(params, "num_rows");
-
-      if (k > num_variables) {
-        throw std::invalid_argument("k must be smaller than the total number of variables.");
-      }
+    GraphXORSATConfig(dataframe::Params &params) : dataframe::Config(params) {
+      L = dataframe::utils::get<int>(params, "L");
+      p = dataframe::utils::get<double>(params, "p");
 
       int seed = dataframe::utils::get<int>(params, "seed", 0);
       if (seed == 0) {
@@ -47,26 +143,11 @@ class GraphXORSATConfig : public dataframe::Config {
     ~GraphXORSATConfig()=default;
 
     virtual dataframe::DataSlide compute(uint32_t num_threads) {
-      Graph g(num_variables);
-      for (size_t i = 0; i < num_rows; i++) {
-        std::vector<uint32_t> vars = draw_random_variables();
-        g.add_edge(vars[0], vars[1]);
-      }
-
-      QuantumGraphState state(g);
-
-      auto interface = state.get_entropy_surface<int>();
-      
-      dataframe::data_t samples;
-      sampler.add_samples(samples, interface);
+      fbg = FourBodyGraphGenerators(L);
 
       dataframe::DataSlide slide;
-      for (auto const &[key, val] : samples) {
-        slide.add_data(key);
-        for (auto const &v : val) {
-          slide.push_samples_to_data(key, v);
-        }
-      }
+      slide.add_data("rank");
+      slide.push_samples_to_data("rank", (double) fbg.get_rank());
 
       return slide;
     }
